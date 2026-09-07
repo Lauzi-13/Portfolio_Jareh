@@ -84,7 +84,7 @@ backToTop.addEventListener('click', () => {
 // ===== Footer year =====
 document.getElementById('year').textContent = new Date().getFullYear();
 
-// ===== Booking form -> Supabase =====
+// ===== Booking form -> WhatsApp (sent automatically via serverless function) =====
 const bookingForm = document.getElementById('bookingForm');
 const bookingSubmit = document.getElementById('bookingSubmit');
 const bookingSubmitLabel = document.getElementById('bookingSubmitLabel');
@@ -103,23 +103,18 @@ if (bookingForm) {
     const honeypot = bookingForm.querySelector('#company').value.trim();
     if (honeypot) {
       bookingForm.reset();
-      setFormStatus("Thanks! Your enquiry has been sent.", 'success');
+      setFormStatus('Thanks! Your enquiry has been sent.', 'success');
       return;
     }
 
     const name = document.getElementById('name').value.trim();
     const phone = document.getElementById('phone').value.trim();
     const eventType = document.getElementById('eventType').value;
-    const eventDate = document.getElementById('date').value || null;
+    const eventDate = document.getElementById('date').value;
     const message = document.getElementById('message').value.trim();
 
     if (!name || !phone) {
-      setFormStatus("Please fill in your name and phone number.", 'error');
-      return;
-    }
-
-    if (!supabaseClient) {
-      setFormStatus("Booking system isn't connected yet — please message on WhatsApp instead.", 'error');
+      setFormStatus('Please fill in your name and phone number.', 'error');
       return;
     }
 
@@ -127,26 +122,32 @@ if (bookingForm) {
     bookingSubmitLabel.textContent = 'Sending...';
     setFormStatus('', '');
 
-    const { error } = await supabaseClient.from('bookings').insert([
-      {
-        name,
-        phone,
-        event_type: eventType,
-        event_date: eventDate,
-        message,
-      },
-    ]);
+    try {
+      const response = await fetch('/.netlify/functions/send-booking', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, eventType, eventDate, message }),
+      });
+      const result = await response.json().catch(() => ({}));
 
-    bookingSubmit.disabled = false;
-    bookingSubmitLabel.textContent = 'Send Enquiry';
+      if (!response.ok || result.error) {
+        throw new Error(result.error || 'Request failed');
+      }
 
-    if (error) {
-      console.error('Booking submission failed:', error);
-      setFormStatus("Something went wrong sending your enquiry. Please try WhatsApp instead.", 'error');
-      return;
+      bookingForm.reset();
+      setFormStatus(
+        "Thanks, " + name.split(' ')[0] + "! Your enquiry has been sent straight to Terrency's WhatsApp.",
+        'success'
+      );
+    } catch (err) {
+      console.error('Booking submission failed:', err);
+      setFormStatus(
+        "Something went wrong sending your enquiry automatically — please message on WhatsApp instead.",
+        'error'
+      );
+    } finally {
+      bookingSubmit.disabled = false;
+      bookingSubmitLabel.textContent = 'Send Enquiry';
     }
-
-    bookingForm.reset();
-    setFormStatus("Thanks, " + name.split(' ')[0] + "! Your enquiry has been sent — I'll get back to you soon.", 'success');
   });
 }
